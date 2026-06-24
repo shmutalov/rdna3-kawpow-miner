@@ -17,7 +17,7 @@ from .constants import PROGPOW_PERIOD, KAWPOW_EPOCH_LENGTH
 from .vkhost import VulkanDevice, ComputePipeline
 
 MAX_OUTPUTS = 16
-SEARCH_LOCAL_SIZE = 128          # multiple of 16 lanes and of wave32
+SEARCH_LOCAL_SIZE = 256          # multiple of 16 lanes and of wave32 (tuned on gfx1100)
 DAG_LOCAL_SIZE = 64
 # Host-visible staging window for streaming the device-local DAG to/from disk.
 DAG_STAGING_BYTES = 64 << 20     # 64 MiB
@@ -42,10 +42,13 @@ class Solution:
 
 class VulkanMiner:
     def __init__(self, device_index=None, variant=keccak.KAWPOW,
-                 epoch_length=KAWPOW_EPOCH_LENGTH, dag_cache=True, cache_dir=None):
+                 epoch_length=KAWPOW_EPOCH_LENGTH, dag_cache=True, cache_dir=None,
+                 local_size=SEARCH_LOCAL_SIZE):
         self.dev = VulkanDevice(device_index)
         self.variant = variant
         self.epoch_length = epoch_length
+        # Search workgroup size (wave32 multiple; tunable for occupancy).
+        self.local_size = local_size
         # Disk cache of the light cache + full DAG, so restarts within an epoch
         # skip both the host mkcache and the GPU DAG build.
         self._cache = dagcache.Cache(cache_dir) if dag_cache else None
@@ -257,7 +260,7 @@ class VulkanMiner:
                                 MAX_OUTPUTS, cc, cm)
         self._search_pipe = ComputePipeline(
             self.dev, spv, num_bindings=3, push_const_size=16,
-            local_size=SEARCH_LOCAL_SIZE, required_subgroup_size=32)
+            local_size=self.local_size, required_subgroup_size=32)
         self._search_pipe.bind([self._hdr_buf, self._dag_buf, self._out_buf])
         self._period = period
         log(f"Compiled period {period} kernel in {(time.time()-t0)*1000:.0f} ms")
@@ -270,7 +273,7 @@ class VulkanMiner:
         """
         self._hdr_buf.write(header_bytes)
         self._out_buf.write(b"\x00" * 16)  # zero count/hashCount/abort
-        groups = (num_nonces + SEARCH_LOCAL_SIZE - 1) // SEARCH_LOCAL_SIZE
+        groups = (num_nonces + self.local_size - 1) // self.local_size
         push = struct.pack("<4I", start_nonce & 0xFFFFFFFF, start_nonce >> 32,
                            target & 0xFFFFFFFF, (target >> 32) & 0xFFFFFFFF)
         self.dev.dispatch(self._search_pipe, groups, push)
@@ -307,8 +310,8 @@ class VulkanMiner:
         if per_nonce:
             safe = int(WATCHDOG_TARGET_S / per_nonce)
             # round down to a multiple of the local size
-            self._safe_batch = max(SEARCH_LOCAL_SIZE,
-                                   (safe // SEARCH_LOCAL_SIZE) * SEARCH_LOCAL_SIZE)
+            self._safe_batch = max(self.local_size,
+                                   (safe // self.local_size) * self.local_size)
         log(f"  safe batch = {self._safe_batch} nonces (~{WATCHDOG_TARGET_S*1000:.0f} ms/dispatch)")
         return self._safe_batch
 

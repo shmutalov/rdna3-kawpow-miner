@@ -57,9 +57,11 @@ def resolve_pool(args):
 
 
 def mine(args, variant):
+    extra = {"local_size": args.local_size} if args.local_size else {}
     miner = VulkanMiner(device_index=args.device, variant=variant,
                         epoch_length=args.epoch_length,
-                        dag_cache=not args.no_dag_cache, cache_dir=args.cache_dir)
+                        dag_cache=not args.no_dag_cache, cache_dir=args.cache_dir,
+                        **extra)
     print(miner.dev.summary())
 
     pool = resolve_pool(args)
@@ -164,6 +166,9 @@ def main(argv=None):
     ap.add_argument("--epoch-length", type=int, default=KAWPOW_EPOCH_LENGTH)
     ap.add_argument("--no-recheck", action="store_true",
                     help="submit GPU solutions without host re-verification")
+    ap.add_argument("--local-size", type=int, default=None,
+                    help="search workgroup size (wave32 multiple, e.g. 64/128/256); "
+                         "tunes occupancy")
     ap.add_argument("--no-dag-cache", action="store_true",
                     help="disable on-disk caching of the light cache + DAG")
     ap.add_argument("--cache-dir", default=None,
@@ -185,8 +190,9 @@ def main(argv=None):
 
     if args.benchmark:
         variant = keccak.KAWPOW if args.variant == "kawpow" else keccak.VANILLA
+        extra = {"local_size": args.local_size} if args.local_size else {}
         m = VulkanMiner(device_index=args.device, variant=variant,
-                        epoch_length=args.epoch_length, dag_cache=False)
+                        epoch_length=args.epoch_length, dag_cache=False, **extra)
         print(m.dev.summary())
         m.benchmark(args.bench_block, args.bench_seconds, use_real_dag=False)
         return 0

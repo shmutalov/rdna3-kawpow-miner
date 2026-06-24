@@ -115,8 +115,11 @@ python tests/test_reference_vector.py
 
 ### Remaining / nice-to-have
 
-- **Hashrate tuning** — ~44–48 MH/s vs ~60+ MH/s for mature miners; headroom in
-  work-group size, occupancy, and DAG memory placement.
+- **Hashrate** — ~49 MH/s on the RX 7900 XT (workgroup size tunable via
+  `--local-size`; 256 is the gfx1100 default). That is at or above mature-miner
+  figures for this card (~46 MH/s per minerstat); the larger RX 7900 **XTX**
+  reaches ~58 MH/s. Occupancy is already saturated, so further gains would need
+  ISA-level register/scheduling tuning not reachable through GLSL → SPIR-V.
 - Other pools may use different stratum conventions (the nonce format above is
   what Gaelium's pool expects); a different pool may need a tweak.
 
