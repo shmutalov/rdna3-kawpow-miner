@@ -1,0 +1,10 @@
+# Python host dependencies. All GPU work is SPIR-V on the device, so these are
+# orchestration-only and have no effect on hashrate.
+vulkan>=1.3.275          # Vulkan binding (drives the GPU; RDNA3 extensions supported)
+numpy>=1.24             # buffer packing / readback
+pycryptodome>=3.20      # original Keccak-256/512 for ethash (NOT NIST SHA3)
+
+# Also required, but not pip-installable:
+#   * Vulkan SDK (provides glslc for runtime GLSL->SPIR-V compilation, and the
+#     Vulkan loader). Set VULKAN_SDK or put glslc on PATH.
+#   * An RDNA3 GPU + recent AMD driver (validated on RX 7900 XT / gfx1100).
