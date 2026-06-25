@@ -39,6 +39,21 @@ RUN chmod +x /pkg/rdna3kawpow/*.sh /pkg/rdna3kawpow/rdna3-kawpow /pkg/rdna3kawpo
 FROM scratch AS export
 COPY --from=build /pkg/ /
 
+# Release tarballs, built in Linux so the executable bits are preserved.
+#   docker build -f docker/Dockerfile.hiveos --target release -o type=local,dest=dist/release .
+# -> dist/release/{rdna3kawpow-hiveos.tar.gz, rdna3-kawpow-linux-x64.tar.gz}
+FROM build AS release-stage
+RUN set -e; \
+    mkdir -p /rel; \
+    cd /pkg && tar -czf /rel/rdna3kawpow-hiveos.tar.gz rdna3kawpow; \
+    mkdir -p /tmp/lin/rdna3-kawpow-linux-x64; \
+    cp /pkg/rdna3kawpow/rdna3-kawpow /pkg/rdna3kawpow/glslangValidator \
+       /tmp/lin/rdna3-kawpow-linux-x64/; \
+    cd /tmp/lin && tar -czf /rel/rdna3-kawpow-linux-x64.tar.gz rdna3-kawpow-linux-x64
+
+FROM scratch AS release
+COPY --from=release-stage /rel/ /
+
 # Convenience: a runnable image with the Vulkan loader for local Linux testing.
 FROM ubuntu:22.04 AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
