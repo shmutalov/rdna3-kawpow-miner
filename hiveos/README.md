@@ -63,12 +63,15 @@ The first start of each epoch builds + caches the DAG to disk
 (`~/.cache/rdna3_kawpow/dagcache` or `$RDNA3_KAWPOW_CACHE_DIR`); restarts within an
 epoch reload it in well under a second.
 
-## Notes / limitations
+## Notes
 
-- temps, fans and `bus_numbers` are filled by the HiveOS agent from `gpu-stats`;
-  the miner reports only hashrate + shares. On **heterogeneous** rigs the per-GPU
-  hashrate array is in Vulkan device order, which may not match HiveOS slot order
-  — a future refinement is to report each GPU's PCI bus id (via
-  `VK_EXT_pci_bus_info`) in the stats JSON so HiveOS maps them exactly.
+- temps, fans and power are filled by the HiveOS agent. The miner reports
+  hashrate + shares, plus each GPU's **PCI bus id** (via `VK_EXT_pci_bus_info`),
+  so `h-stats.sh` emits `bus_numbers` and HiveOS maps each per-GPU hashrate to the
+  correct physical card regardless of Vulkan enumeration order — correct per-card
+  attribution even on heterogeneous rigs. If a driver doesn't expose the extension
+  (e.g. the AMD *Windows* driver), `bus_numbers` is omitted and HiveOS falls back
+  to positional mapping (fine for homogeneous rigs); the Linux RADV/AMDVLK stack
+  HiveOS uses does expose it.
 - Requires AMD RDNA3 (gfx11) with `VK_EXT_subgroup_size_control` (wave32). HiveOS
   ships the AMD Vulkan stack; no driver install needed.

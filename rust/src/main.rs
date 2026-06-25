@@ -166,6 +166,7 @@ fn mine(args: &Args, variant: Variant) -> Result<()> {
 
     let stats = Stats::new(if variant == Variant::Kawpow { "kawpow" } else { "vanilla" });
     stats.set_device(&miner.dev.name);
+    stats.set_bus_id(miner.dev.pci_bus);
     if let Some(addr) = &args.api_bind {
         match stats.serve(addr) {
             Ok(bound) => println!("stats API on http://{bound}"),
@@ -270,11 +271,13 @@ fn main() -> Result<()> {
 
     if args.list_devices {
         for d in rdna3_kawpow::vkhost::enumerate_devices()? {
+            let bus = d.pci_bus.map(|b| format!("  PCI bus {b}")).unwrap_or_default();
             println!(
-                "device {}: {}{}",
+                "device {}: {}{}{}",
                 d.index,
                 d.name,
-                if d.discrete { " [discrete]" } else { "" }
+                if d.discrete { " [discrete]" } else { "" },
+                bus
             );
         }
         // Detailed feature summary for the selected/first device.

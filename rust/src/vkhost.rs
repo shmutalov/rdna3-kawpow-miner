@@ -31,6 +31,29 @@ pub struct DeviceInfo {
     pub index: usize,
     pub name: String,
     pub discrete: bool,
+    /// PCI bus number (VK_EXT_pci_bus_info), for mapping to HiveOS GPU slots.
+    pub pci_bus: Option<u32>,
+}
+
+/// True if `physical` advertises `needle` as a device extension.
+fn device_has_ext(instance: &Instance, physical: vk::PhysicalDevice, needle: &CStr) -> bool {
+    unsafe { instance.enumerate_device_extension_properties(physical) }
+        .map(|exts| {
+            exts.iter()
+                .any(|e| unsafe { CStr::from_ptr(e.extension_name.as_ptr()) } == needle)
+        })
+        .unwrap_or(false)
+}
+
+/// Query the GPU's PCI bus number via VK_EXT_pci_bus_info (None if unsupported).
+fn query_pci_bus(instance: &Instance, physical: vk::PhysicalDevice) -> Option<u32> {
+    if !device_has_ext(instance, physical, ash::ext::pci_bus_info::NAME) {
+        return None;
+    }
+    let mut pci = vk::PhysicalDevicePCIBusInfoPropertiesEXT::default();
+    let mut props2 = vk::PhysicalDeviceProperties2::default().push_next(&mut pci);
+    unsafe { instance.get_physical_device_properties2(physical, &mut props2) };
+    Some(pci.pci_bus)
 }
 
 /// Enumerate all Vulkan physical devices (for multi-GPU rig orchestration).
@@ -61,6 +84,7 @@ pub fn enumerate_devices() -> Result<Vec<DeviceInfo>> {
                     index,
                     name,
                     discrete: props.device_type == vk::PhysicalDeviceType::DISCRETE_GPU,
+                    pci_bus: query_pci_bus(&instance, pd),
                 }
             })
             .collect())
@@ -297,6 +321,7 @@ struct DeviceParts {
     subgroup_min: u32,
     subgroup_max: u32,
     compute_units: u32,
+    pci_bus: Option<u32>,
     queue: vk::Queue,
     device: ash::Device,
     physical: vk::PhysicalDevice,
@@ -314,6 +339,8 @@ pub struct VulkanDevice {
     pub subgroup_min: u32,
     pub subgroup_max: u32,
     pub compute_units: u32,
+    /// PCI bus number (VK_EXT_pci_bus_info), for HiveOS GPU-slot mapping.
+    pub pci_bus: Option<u32>,
 }
 
 impl VulkanDevice {
@@ -361,6 +388,7 @@ impl VulkanDevice {
             subgroup_min: parts.subgroup_min,
             subgroup_max: parts.subgroup_max,
             compute_units: parts.compute_units,
+            pci_bus: parts.pci_bus,
         })
     }
 
@@ -401,6 +429,8 @@ impl VulkanDevice {
         };
         let has_subgroup_size_control = has_ext(ash::ext::subgroup_size_control::NAME);
         let has_amd_core2 = has_ext(ash::amd::shader_core_properties2::NAME);
+        let has_pci_bus = has_ext(ash::ext::pci_bus_info::NAME);
+        let pci_bus = query_pci_bus(instance, physical);
 
         let mut ssc_props = vk::PhysicalDeviceSubgroupSizeControlProperties::default();
         let mut amd_core2 = vk::PhysicalDeviceShaderCoreProperties2AMD::default();
@@ -434,6 +464,9 @@ impl VulkanDevice {
         if has_subgroup_size_control {
             dev_exts.push(ash::ext::subgroup_size_control::NAME.as_ptr());
         }
+        if has_pci_bus {
+            dev_exts.push(ash::ext::pci_bus_info::NAME.as_ptr());
+        }
         let dci = vk::DeviceCreateInfo::default()
             .queue_create_infos(std::slice::from_ref(&queue_info))
             .enabled_extension_names(&dev_exts)
@@ -459,6 +492,7 @@ impl VulkanDevice {
             subgroup_min,
             subgroup_max,
             compute_units,
+            pci_bus,
             queue,
             device,
             physical,
@@ -633,10 +667,11 @@ impl VulkanDevice {
         } else {
             "?".to_string()
         };
+        let bus = self.pci_bus.map(|b| b.to_string()).unwrap_or_else(|| "?".into());
         format!(
             "{}  (Vulkan {})\n  \
              subgroup size control: {} [{}..{}]\n  \
-             AMD core props2: {}  compute units: {}",
+             AMD core props2: {}  compute units: {}  PCI bus: {}",
             self.name,
             self.api_version,
             self.has_subgroup_size_control,
@@ -644,6 +679,7 @@ impl VulkanDevice {
             self.subgroup_max,
             self.has_amd_core2,
             cus,
+            bus,
         )
     }
 }

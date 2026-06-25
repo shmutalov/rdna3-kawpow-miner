@@ -7,7 +7,7 @@
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Instant;
@@ -19,6 +19,7 @@ struct Inner {
     accepted: AtomicU64,
     rejected: AtomicU64,
     invalid: AtomicU64,
+    bus_id: AtomicI64, // PCI bus number, or -1 if unknown
     start: Instant,
     algo: String,
     device: Mutex<String>,
@@ -37,6 +38,7 @@ impl Stats {
                 accepted: AtomicU64::new(0),
                 rejected: AtomicU64::new(0),
                 invalid: AtomicU64::new(0),
+                bus_id: AtomicI64::new(-1),
                 start: Instant::now(),
                 algo: algo.to_string(),
                 device: Mutex::new(String::new()),
@@ -46,6 +48,11 @@ impl Stats {
 
     pub fn set_device(&self, name: &str) {
         *self.inner.device.lock().unwrap() = name.to_string();
+    }
+    pub fn set_bus_id(&self, bus: Option<u32>) {
+        self.inner
+            .bus_id
+            .store(bus.map(|b| b as i64).unwrap_or(-1), Ordering::Relaxed);
     }
     pub fn set_hashrate(&self, hs: f64) {
         self.inner.hashrate_bits.store(hs.to_bits(), Ordering::Relaxed);
@@ -60,6 +67,7 @@ impl Stats {
 
     fn snapshot_json(&self) -> String {
         let hs = f64::from_bits(self.inner.hashrate_bits.load(Ordering::Relaxed));
+        let bus = self.inner.bus_id.load(Ordering::Relaxed);
         json!({
             "hashrate": hs,
             "hashrate_mhs": hs / 1e6,
@@ -69,6 +77,8 @@ impl Stats {
             "uptime": self.inner.start.elapsed().as_secs(),
             "algo": self.inner.algo,
             "device": *self.inner.device.lock().unwrap(),
+            // PCI bus number for HiveOS GPU-slot mapping; null if unknown.
+            "bus_id": if bus < 0 { serde_json::Value::Null } else { json!(bus) },
         })
         .to_string()
     }
@@ -120,6 +130,11 @@ mod tests {
         assert_eq!(v["rejected"], 1);
         assert_eq!(v["invalid"], 1);
         assert!((v["hashrate_mhs"].as_f64().unwrap() - 49.47).abs() < 0.01);
+        // bus_id: null until set, then the integer.
+        assert!(v["bus_id"].is_null());
+        s.set_bus_id(Some(3));
+        let v2: serde_json::Value = serde_json::from_str(&s.snapshot_json()).unwrap();
+        assert_eq!(v2["bus_id"], 3);
     }
 
     #[test]
