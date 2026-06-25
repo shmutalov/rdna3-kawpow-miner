@@ -1,0 +1,49 @@
+# syntax=docker/dockerfile:1
+#
+# Build the self-contained HiveOS custom-miner package.
+#
+#   docker build -f docker/Dockerfile.hiveos --target export -o type=local,dest=dist .
+#
+# -> dist/rdna3kawpow/  (binary + bundled glslangValidator + h-* scripts)
+# Zip that folder and upload it in HiveOS (Flight Sheet -> custom miner), or drop
+# it in /hive/miners/custom/rdna3kawpow/ on the rig.
+#
+# Built on Debian bullseye (glibc 2.31) so both the Rust binary AND the bundled
+# glslangValidator require glibc <= 2.31 -- compatible with HiveOS (Ubuntu 22.04,
+# glibc 2.35) and older. The build prints the max glibc each actually needs.
+
+ARG BUILDER_IMAGE=rust:1-bullseye
+
+FROM ${BUILDER_IMAGE} AS build
+# glslangValidator (the runtime SPIR-V compiler) is bundled into the package.
+RUN apt-get update && apt-get install -y --no-install-recommends glslang-tools \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY rust/ rust/
+COPY rdna3_kawpow/shaders/ rdna3_kawpow/shaders/
+WORKDIR /src/rust
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    cargo build --release \
+ && install -D target/release/rdna3-kawpow /pkg/rdna3kawpow/rdna3-kawpow \
+ && install -D "$(command -v glslangValidator)" /pkg/rdna3kawpow/glslangValidator \
+ && echo "=== max glibc required ===" \
+ && printf 'rdna3-kawpow:      '; objdump -T /pkg/rdna3kawpow/rdna3-kawpow     | grep -oE 'GLIBC_[0-9.]+' | sort -uV | tail -1 \
+ && printf 'glslangValidator:  '; objdump -T /pkg/rdna3kawpow/glslangValidator | grep -oE 'GLIBC_[0-9.]+' | sort -uV | tail -1
+
+COPY hiveos/ /pkg/rdna3kawpow/
+RUN chmod +x /pkg/rdna3kawpow/*.sh /pkg/rdna3kawpow/rdna3-kawpow /pkg/rdna3kawpow/glslangValidator \
+ && ls -la /pkg/rdna3kawpow
+
+# Export just the package tree to the host (`-o type=local,dest=dist`).
+FROM scratch AS export
+COPY --from=build /pkg/ /
+
+# Convenience: a runnable image with the Vulkan loader for local Linux testing.
+FROM ubuntu:22.04 AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libvulkan1 mesa-vulkan-drivers libstdc++6 ca-certificates jq bc curl \
+ && rm -rf /var/lib/apt/lists/*
+COPY --from=build /pkg/rdna3kawpow/ /opt/rdna3kawpow/
+WORKDIR /opt/rdna3kawpow
+ENTRYPOINT ["./rdna3-kawpow"]

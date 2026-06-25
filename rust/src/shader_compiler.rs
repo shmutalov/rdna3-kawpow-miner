@@ -64,7 +64,16 @@ fn exe_suffix(name: &str) -> String {
 /// PATH, then `$VULKAN_SDK/Bin`. `glslc` wins over `glslangValidator` when both
 /// are present (it optimizes the SPIR-V).
 fn find_compiler() -> Result<Compiler> {
-    let names = [("glslc", true), ("glslangValidator", false)];
+    // RDNA3_KAWPOW_COMPILER=glslangValidator (or glslc) forces a preference;
+    // otherwise glslc wins when both are present (it optimizes the SPIR-V).
+    let prefer_glslang = std::env::var("RDNA3_KAWPOW_COMPILER")
+        .map(|v| v.to_ascii_lowercase().starts_with("glslang"))
+        .unwrap_or(false);
+    let names: [(&str, bool); 2] = if prefer_glslang {
+        [("glslangValidator", false), ("glslc", true)]
+    } else {
+        [("glslc", true), ("glslangValidator", false)]
+    };
 
     // 1) Same directory as the running executable (bundled compiler).
     if let Ok(exe) = std::env::current_exe() {
@@ -155,11 +164,13 @@ pub fn compile_glsl(src: &str, stage: &str, optimize: bool) -> Result<Vec<u8>> {
         }
         Compiler::Glslang(p) => {
             // glslangValidator: -V emits a Vulkan SPIR-V binary; -S sets the stage.
+            // target vulkan1.2 (SPIR-V 1.5): covers our subgroup + int64 use and is
+            // accepted by older glslang (the apt build); valid on the 1.3 device.
             // (No -O; the AMD driver optimizes the SPIR-V on ingestion anyway.)
             let mut c = Command::new(p);
             c.arg("-V")
                 .arg("--target-env")
-                .arg("vulkan1.3")
+                .arg("vulkan1.2")
                 .arg("-S")
                 .arg(stage)
                 .arg(&src_path)

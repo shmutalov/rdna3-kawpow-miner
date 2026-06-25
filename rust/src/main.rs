@@ -288,7 +288,7 @@ fn main() -> Result<()> {
             Err(e) => println!("[selftest] device probe failed (no GPU here?): {e:#}"),
         }
         let bytes = shader_compiler::selftest()?;
-        println!("[selftest] glslc OK: {bytes} bytes of SPIR-V");
+        println!("[selftest] shader compiler OK: {bytes} bytes of SPIR-V");
         println!("[selftest] PASS");
         return Ok(());
     }
