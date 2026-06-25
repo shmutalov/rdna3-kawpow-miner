@@ -1,0 +1,9 @@
+# Keep the Docker build context small/fast.
+.git
+rust/target
+dist
+**/__pycache__
+*.pyc
+# Local DAG/SPIR-V caches (large, machine-specific)
+**/dagcache
+**/rdna3_kawpow_spv

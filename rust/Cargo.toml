@@ -1,0 +1,40 @@
+[package]
+name = "rdna3-kawpow"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+description = "RDNA3-optimized KawPow (ProgPoW 0.9.3) Vulkan miner -- Rust host"
+license = "MIT"
+
+[[bin]]
+name = "rdna3-kawpow"
+path = "src/main.rs"
+
+[lib]
+name = "rdna3_kawpow"
+path = "src/lib.rs"
+
+[dependencies]
+# Raw Vulkan bindings. Default features include "loaded" (runtime loader via
+# libloading) so we do NOT link libvulkan at build time -- the loader is found at
+# runtime on the rig. This is the only heavy native dependency.
+ash = "0.38"
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+# Zero-copy &[u8] <-> &[u32] casts for buffer I/O.
+bytemuck = "1"
+# Original Keccak (0x01 padding) for ethash light-cache / DAG -- NOT SHA3. The
+# keccak-f800 used by ProgPoW is hand-implemented (no lib provides 32-bit lanes).
+tiny-keccak = { version = "2", features = ["keccak"] }
+# Stratum JSON line protocol + the HiveOS stats JSON.
+serde_json = "1"
+# Cryptographic entropy for randomized nonce-region salting (os.urandom analogue).
+getrandom = "0.2"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+# Unwind (not abort): a panic in a background stratum thread must not kill the
+# whole miner -- the recv thread flags the connection dead and the main loop
+# reconnects instead.
